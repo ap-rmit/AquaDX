@@ -204,21 +204,42 @@ fun WaccaServer.init() {
         val bingo = rp.bingo.findByUser(u).firstOrNull()
         val go = u.card?.aquaUser?.gameOptions ?: AquaGameOptions()
 
-        // All unlock
+        // All unlock - persist to DB so items are available in subsequent API calls (e.g. ticket consumption)
         if (go.waccaUnlockMusic && wacca.musicMapping.isNotEmpty()) {
-            items[MUSIC_UNLOCK()] = wacca.musicMapping.map { (id, v) -> MUSIC_UNLOCK(u, id, p1 = v.notes.size.long() - 1) }
+            val existing = (items[MUSIC_UNLOCK()] ?: emptyList()).associateBy { it.itemId }
+            val toSave = wacca.musicMapping
+                .filter { (id, _) -> id !in existing }
+                .map { (id, v) -> MUSIC_UNLOCK(u, id, p1 = v.notes.size.long() - 1) }
+            val saved = if (toSave.isNotEmpty()) rp.item.saveAll(toSave).associateBy { it.itemId } else emptyMap()
+            items[MUSIC_UNLOCK()] = (existing + saved).values.toList()
         }
         if (go.waccaUnlockTickets) {
-            var i = 0
-            items[TICKET()] = enabledTickets.flatMap { (1..5).map { TICKET(u, it).apply { id = (i++).toLong() } } }
+            // Replenish tickets on every GetDetail so they are always present in DB for consumption
+            rp.item.deleteAll(items[TICKET()] ?: emptyList())
+            val fresh = enabledTickets.flatMap { ticketId -> (1..5).map { TICKET(u, ticketId) } }
+            items[TICKET()] = rp.item.saveAll(fresh)
         }
         if (go.waccaUnlockPlates) {
-            wacca.itemMapping["plates"]?.let { items[USER_PLATE()] = it.map { (k, _) -> USER_PLATE(u, k.int()) } }
+            wacca.itemMapping["plates"]?.let { catalog ->
+                val existing = (items[USER_PLATE()] ?: emptyList()).associateBy { it.itemId }
+                val toSave = catalog
+                    .filter { (k, _) -> k.int() !in existing }
+                    .map { (k, _) -> USER_PLATE(u, k.int()) }
+                val saved = if (toSave.isNotEmpty()) rp.item.saveAll(toSave).associateBy { it.itemId } else emptyMap()
+                items[USER_PLATE()] = (existing + saved).values.toList()
+            }
         }
         if (go.waccaUnlockCollectables) {
             // TODO: Add titles
-            mapOf("icon" to ICON, "trophy" to TROPHY).map { (name, type) ->
-                wacca.itemMapping[name]?.let { items[type()] = it.map { (k, _) -> type(u, k.int()) } }
+            mapOf("icon" to ICON, "trophy" to TROPHY).forEach { (name, type) ->
+                wacca.itemMapping[name]?.let { catalog ->
+                    val existing = (items[type()] ?: emptyList()).associateBy { it.itemId }
+                    val toSave = catalog
+                        .filter { (k, _) -> k.int() !in existing }
+                        .map { (k, _) -> type(u, k.int()) }
+                    val saved = if (toSave.isNotEmpty()) rp.item.saveAll(toSave).associateBy { it.itemId } else emptyMap()
+                    items[type()] = (existing + saved).values.toList()
+                }
             }
         }
 
