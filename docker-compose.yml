@@ -5,7 +5,7 @@ services:
       - "80:80"
       - "8443:8443"
       - "22345:22345"
-    restart: on-failure:3
+    restart: unless-stopped
     environment:
       - SPRING_DATASOURCE_URL=jdbc:mariadb://db:3306/main
       - SPRING_DATASOURCE_USERNAME=cat
@@ -18,6 +18,7 @@ services:
       - ./data:/app/data
   db:
     image: mariadb:latest
+    restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: meow
       MYSQL_DATABASE: main
